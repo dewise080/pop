@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PACKAGES=(
+DNF_PACKAGES=(
   pop-gtk2-theme
   pop-gtk3-theme
   pop-gtk4-theme
   pop-icon-theme
   pop-gnome-shell-theme
+)
+
+APT_CANDIDATE_PACKAGES=(
+  pop-theme
+  pop-gtk-theme
+  pop-icon-theme
+  pop-shell-theme
+  pop-gnome-shell-theme
+  pop-gtk2-theme
+  pop-gtk3-theme
+  pop-gtk4-theme
 )
 
 if [[ "${EUID}" -eq 0 ]]; then
@@ -15,13 +26,46 @@ if [[ "${EUID}" -eq 0 ]]; then
   exit 1
 fi
 
-if ! command -v dnf >/dev/null 2>&1; then
-  echo "dnf is required but was not found."
+install_with_dnf() {
+  echo "Installing Pop packages with dnf..."
+  sudo dnf -y install "${DNF_PACKAGES[@]}"
+}
+
+apt_pkg_exists() {
+  apt-cache show "$1" >/dev/null 2>&1
+}
+
+install_with_apt() {
+  local pkg
+  local install_list=()
+
+  echo "Refreshing apt package index..."
+  sudo apt-get update
+
+  for pkg in "${APT_CANDIDATE_PACKAGES[@]}"; do
+    if apt_pkg_exists "${pkg}"; then
+      install_list+=("${pkg}")
+    fi
+  done
+
+  if [[ "${#install_list[@]}" -eq 0 ]]; then
+    echo "No Pop theme packages found in apt repositories."
+    echo "Checked packages: ${APT_CANDIDATE_PACKAGES[*]}"
+    exit 1
+  fi
+
+  echo "Installing Pop packages with apt: ${install_list[*]}"
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${install_list[@]}"
+}
+
+if command -v dnf >/dev/null 2>&1; then
+  install_with_dnf
+elif command -v apt-get >/dev/null 2>&1; then
+  install_with_apt
+else
+  echo "No supported package manager found. Supported: dnf, apt-get."
   exit 1
 fi
-
-echo "Installing Pop packages..."
-sudo dnf -y install "${PACKAGES[@]}"
 
 RUNTIME_DIR="/run/user/$(id -u)"
 BUS_PATH="${RUNTIME_DIR}/bus"
@@ -43,7 +87,11 @@ gsettings set org.gnome.desktop.wm.preferences theme "'Pop-dark'"
 
 echo
 echo "Installed Pop packages:"
-rpm -qa | grep '^pop-.*theme' | sort
+if command -v rpm >/dev/null 2>&1; then
+  rpm -qa | grep '^pop-' | sort || true
+elif command -v dpkg-query >/dev/null 2>&1; then
+  dpkg-query -W -f='${Package}\n' 'pop*' 2>/dev/null | sort || true
+fi
 
 echo
 echo "Current GNOME values:"
