@@ -133,7 +133,7 @@ echo "Installed Pop packages:"
 if command -v rpm >/dev/null 2>&1; then
   rpm -qa | grep '^pop-' | sort || true
 elif command -v dpkg-query >/dev/null 2>&1; then
-  dpkg-query -W -f='${Package}\n' 'pop*' 2>/dev/null | sort || true
+  dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E '^pop-' | sort || true
 fi
 if [[ "${INSTALLED_FROM_SOURCE}" -eq 1 ]]; then
   echo "Installed from source to ${HOME}/.local:"
