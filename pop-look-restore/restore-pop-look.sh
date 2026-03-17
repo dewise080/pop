@@ -20,6 +20,17 @@ APT_CANDIDATE_PACKAGES=(
   pop-gtk4-theme
 )
 
+APT_BUILD_DEPS=(
+  git
+  meson
+  ninja-build
+  sassc
+  libglib2.0-dev
+  pkg-config
+)
+
+INSTALLED_FROM_SOURCE=0
+
 if [[ "${EUID}" -eq 0 ]]; then
   echo "Run this script as your desktop user (not root)."
   echo "It uses sudo only for package installation."
@@ -33,6 +44,36 @@ install_with_dnf() {
 
 apt_pkg_exists() {
   apt-cache show "$1" >/dev/null 2>&1
+}
+
+install_pop_from_source_apt() {
+  local workdir
+  local gtk_repo
+  local icon_repo
+  local gtk_build
+  local icon_build
+
+  workdir="$(mktemp -d /tmp/pop-theme-src-XXXXXX)"
+  gtk_repo="${workdir}/gtk-theme"
+  icon_repo="${workdir}/icon-theme"
+  gtk_build="${gtk_repo}/build"
+  icon_build="${icon_repo}/build"
+
+  echo "Installing build dependencies for source install..."
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_BUILD_DEPS[@]}"
+
+  echo "Building and installing Pop GTK theme to ${HOME}/.local ..."
+  git clone --depth=1 https://github.com/pop-os/gtk-theme.git "${gtk_repo}"
+  meson setup "${gtk_build}" "${gtk_repo}" --prefix="${HOME}/.local"
+  ninja -C "${gtk_build}" install
+
+  echo "Building and installing Pop icon theme to ${HOME}/.local ..."
+  git clone --depth=1 https://github.com/pop-os/icon-theme.git "${icon_repo}"
+  meson setup "${icon_build}" "${icon_repo}" --prefix="${HOME}/.local"
+  ninja -C "${icon_build}" install
+
+  rm -rf "${workdir}"
+  INSTALLED_FROM_SOURCE=1
 }
 
 install_with_apt() {
@@ -51,7 +92,9 @@ install_with_apt() {
   if [[ "${#install_list[@]}" -eq 0 ]]; then
     echo "No Pop theme packages found in apt repositories."
     echo "Checked packages: ${APT_CANDIDATE_PACKAGES[*]}"
-    exit 1
+    echo "Falling back to source install from official Pop OS repositories..."
+    install_pop_from_source_apt
+    return
   fi
 
   echo "Installing Pop packages with apt: ${install_list[*]}"
@@ -91,6 +134,11 @@ if command -v rpm >/dev/null 2>&1; then
   rpm -qa | grep '^pop-' | sort || true
 elif command -v dpkg-query >/dev/null 2>&1; then
   dpkg-query -W -f='${Package}\n' 'pop*' 2>/dev/null | sort || true
+fi
+if [[ "${INSTALLED_FROM_SOURCE}" -eq 1 ]]; then
+  echo "Installed from source to ${HOME}/.local:"
+  ls -1d "${HOME}"/.local/share/themes/Pop* 2>/dev/null || true
+  ls -1d "${HOME}"/.local/share/icons/Pop* 2>/dev/null || true
 fi
 
 echo
